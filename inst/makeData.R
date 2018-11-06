@@ -2,6 +2,8 @@
 ## ADMIN BOUNDARIES
 #####
 library(tidyverse)
+library(lubridate)
+library(rgeos)
 library(sf)
 # downloading admin boundaries of Belgium
 belgium = sf::st_as_sf((rnaturalearth::ne_states(country = 'belgium')))
@@ -12,7 +14,7 @@ devtools::use_data(belgium, overwrite = TRUE)
 devtools::use_data(wallonia, overwrite = TRUE)
 
 #####
-## RMI INCA + CUSTOM INTERPOLATION GRID
+## RMI INCA EMPTY GRID + CUSTOM EMPTY GRID FOR INTERPOLATION
 #####
 
 # building custom grid at 1 km² resolution
@@ -24,14 +26,38 @@ customGrid = sf::st_transform(customGrid, crs = 4326)
 # saving objects
 devtools::use_data(customGrid, overwrite = TRUE)
 # loading INCA (RMI) grid for whole BE
-load("./inst/extdata/INCA_BE_Archive/INCA_TT_2013.Rdata")
-inca = sf::st_transform(sf::st_as_sf(inca), crs = 4326)
+load("./inst/extdata/INCA_BE_DAY/INCA_TT_2013.Rdata")
+incaGrid = sf::st_transform(sf::st_as_sf(inca), crs = 4326)
 # limit it to Wallonia and not full extent
-inca = sf::st_transform(sf::st_intersection(sf::st_transform(inca, 3812), sf::st_transform(wallonia, 3812)), 4326)
-devtools::use_data(inca, overwrite = TRUE)
+incaGrid = sf::st_transform(sf::st_intersection(sf::st_transform(incaGrid, 3812), sf::st_transform(wallonia, 3812)), 4326)
+incaGrid = incaGrid[c("px", "latitude", "longitude")]
+devtools::use_data(incaGrid, overwrite = TRUE)
 
 #####
-## AGROMET STATIONS HISTORICAL DATA (years)
+## RMI INCA 1 MONTH HISTORICAL DATA HOURLY
+#####
+
+# load all the hourly datasets
+inca.hourly.file.list = list.files(path = "./inst/extdata/INCA_BE_H/", pattern = ".Rdata")
+# extract only 1 month because to heavy to load all at onece
+inca.hourly.1month =  lapply(inca.hourly.file.list[(length(inca.hourly.file.list) - 24)], function(x) {
+  load(file = paste0("./inst/extdata/INCA_BE_H/",x))
+  get(ls()[ls() != "filename"])
+})
+#names(inca.hourly.1month) <- inca.hourly.file.list[(length(inca.hourly.file.list) - 24)]
+inca.hourly.1month = data.frame(inca.hourly.1month)
+colnames(inca.hourly.1month) = c("hour", "date", "px", "tsahp1")
+# make it spatial to only keep Wallonia
+inca.hourly.1month = inca.hourly.1month %>%
+  dplyr::filter(px %in% incaGrid$px) %>%
+  # convert date and hour to posixct
+  dplyr::mutate(mtime = paste(date, as.character(hour), sep = " ")) %>%
+  dplyr::mutate_at(.vars = "mtime", .funs = as.POSIXct, format = "%Y%m%d %H") %>%
+  dplyr::select(-one_of(c("hour", "date")))
+devtools::use_data(inca.hourly.1month, overwrite = TRUE)
+
+#####
+## AGROMET STATIONS HISTORICAL DATA 2015-2018
 #####
 
 # Read data from the API exported json file downloaded from PAMESEB FTP & create a dataframe
@@ -50,7 +76,17 @@ records.data = records.data %>%
   filter(!is.na(tsa)) %>%
   filter(!is.na(ens))
 # saving as an object
-# devtools::use_data(records.data, overwrite = TRUE)
+devtools::use_data(records.data, overwrite = TRUE)
+
+#####
+## AGROMET STATIONS HISTORICAL DATA 1 month corresponding to inca.hourly.1month
+#####
+
+# filtering according to what is present in inca.hourly.1month
+records.hourly.1month = records.data %>%
+  dplyr::filter(mtime %in% inca.hourly.1month$mtime)
+# saving as an object
+devtools::use_data(records.hourly.1month, overwrite = TRUE)
 
 #####
 ## DEM
@@ -125,9 +161,9 @@ devtools::use_data(corine, overwrite = TRUE)
 inca.elevation.ext <- raster::extract(
   raster::projectRaster(
     DEM,
-    crs = (sf::st_crs(inca))$proj4string
+    crs = (sf::st_crs(incaGrid))$proj4string
   ),
-  as(inca, "Spatial"),
+  as(incaGrid, "Spatial"),
   buffer = 200,
   fun = mean,
   na.rm = TRUE,
@@ -139,9 +175,9 @@ colnames(inca.elevation.ext) = c("ID", "elevation")
 inca.slope.ext <- raster::extract(
   raster::projectRaster(
     slope,
-    crs = (sf::st_crs(inca))$proj4string
+    crs = (sf::st_crs(incaGrid))$proj4string
   ),
-  as(inca, "Spatial"),
+  as(incaGrid, "Spatial"),
   buffer = 200,
   fun = mean,
   na.rm = TRUE,
@@ -151,21 +187,21 @@ inca.slope.ext <- raster::extract(
 inca.aspect.ext <- raster::extract(
   raster::projectRaster(
     aspect,
-    crs = (sf::st_crs(inca))$proj4string
+    crs = (sf::st_crs(incaGrid))$proj4string
   ),
-  as(inca, "Spatial"),
+  as(incaGrid, "Spatial"),
   buffer = 200,
   fun = mean,
   na.rm = TRUE,
   df = TRUE
 )
 # storing in a sf object
-inca.ext = bind_cols(inca, inca.elevation.ext, inca.slope.ext, inca.aspect.ext)
+inca.ext = bind_cols(incaGrid, inca.elevation.ext, inca.slope.ext, inca.aspect.ext)
 # saving as an object
 devtools::use_data(inca.ext, overwrite = TRUE)
 
 # Make a 500m radius buffer around  points for CLC extract
-inca.buff.grd = sf::st_buffer(sf::st_transform(inca, 3812), dist = 500)
+inca.buff.grd = sf::st_buffer(sf::st_transform(incaGrid, 3812), dist = 500)
 
 # extract cover information into the buffered points
 corine.inca = sf::st_intersection(inca.buff.grd, sf::st_transform(corine, 3812))
