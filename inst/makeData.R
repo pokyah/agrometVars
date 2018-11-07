@@ -1,6 +1,7 @@
 #####
 ## ADMIN BOUNDARIES
 #####
+library(agrometAPI)
 library(tidyverse)
 library(lubridate)
 library(rgeos)
@@ -54,7 +55,7 @@ inca.hourly.1month = inca.hourly.1month %>%
   dplyr::mutate(mtime = paste(date, as.character(hour), sep = " ")) %>%
   dplyr::mutate_at(.vars = "mtime", .funs = as.POSIXct, format = "%Y%m%d %H") %>%
   dplyr::select(-one_of(c("hour", "date")))
-devtools::use_data(inca.hourly.1month, overwrite = TRUE)
+
 
 #####
 ## AGROMET STATIONS HISTORICAL DATA 2015-2018
@@ -85,8 +86,7 @@ devtools::use_data(records.data, overwrite = TRUE)
 # filtering according to what is present in inca.hourly.1month
 records.hourly.1month = records.data %>%
   dplyr::filter(mtime %in% inca.hourly.1month$mtime)
-# saving as an object
-devtools::use_data(records.hourly.1month, overwrite = TRUE)
+
 
 #####
 ## DEM
@@ -242,9 +242,6 @@ inca.ext = merge(inca.ext, cover.rate, by = "px")
 # removing duplicated ID cols resulting from bind_cols operation
 excluded_vars = c("ID1", "ID2")
 inca.ext  = select(inca.ext, -one_of(excluded_vars))
-# saving as an object
-devtools::use_data(inca.ext, overwrite = TRUE)
-
 
 #####
 ## STATIONS EXTRACTIONS
@@ -297,11 +294,9 @@ stations.aspect.ext <- raster::extract(
 )
 # storing in a sf object
 stations.ext = bind_cols(stations, stations.DEM.ext, stations.slope.ext, stations.aspect.ext)
-# saving as an object
-devtools::use_data(stations.ext, overwrite = TRUE)
 
-# Make a 100m radius buffer around  points for CLC extract
-stations.buff = sf::st_buffer(sf::st_transform(stations, 3812), dist = 100)
+# Make a 500m radius buffer around  points for CLC extract
+stations.buff = sf::st_buffer(sf::st_transform(stations, 3812), dist = 500)
 
 # extract cover information into the buffered points
 corine.stations = sf::st_intersection(stations.buff, sf::st_transform(corine, 3812))
@@ -343,8 +338,41 @@ stations.ext = merge(stations.ext, cover.rate, by = "sid")
 # removing duplicated ID cols resulting from bind_cols operation
 excluded_vars = c("ID1", "ID2")
 stations.ext  = select(stations.ext, -one_of(excluded_vars))
-# saving as an object
-devtools::use_data(stations.ext, overwrite = TRUE)
+
+
+#####
+## CREATING THE FINAL OBJECTS WITH SIZE OPTIMIZATION
+#####
+
+# static independent vars at stations + station geography objects
+stations.static = stations.ext
+stations.sf = stations.static %>%
+  dplyr::select(c(sid, poste))
+st_geometry(stations.static) = NULL
+stations.static = stations.static %>%
+  dplyr::select(c(sid, altitude, elevation, slope, aspect, Agricultural_areas, Artificials_surfaces, Forest, Herbaceous_vegetation))
+devtools::use_data(stations.sf, overwrite = TRUE)
+devtools::use_data(stations.static, overwrite = TRUE)
+
+# static independent vars at grid points + grid points geography objects
+grid.static = inca.ext
+grid.sf = grid.static %>%
+  dplyr::select(c(px))
+grid.static = grid.static %>%
+  dplyr::select(c(px, elevation, slope, aspect, Agricultural_areas, Artificials_surfaces, Forest, Herbaceous_vegetation))
+devtools::use_data(grid.sf, overwrite = TRUE)
+devtools::use_data(grid.static, overwrite = TRUE)
+
+# dynamic records at stations
+stations.dyn = records.hourly.1month
+stations.dyn = stations.dyn %>%
+  dplyr::select(c(sid, mtime, tsa, ens))
+devtools::use_data(stations.dyn, overwrite = TRUE)
+
+# dynamic records at grid points
+grid.dyn = inca.hourly.1month
+colnames(grid.dyn) = c("px", "tsa_hp1", "mtime")
+devtools::use_data(grid.dyn, overwrite = TRUE)
 
 #+ ---------------------------------
 #' ## Terms of service
