@@ -360,6 +360,10 @@ stations.ext  = select(stations.ext, -one_of(excluded_vars))
 stations.static = stations.ext
 stations.sf = stations.static %>%
   dplyr::select(c(sid, poste))
+# adding the px of closest point of grid to  each stations of stations.sf
+
+
+# creating the stations static dataset
 st_geometry(stations.static) = NULL
 stations.static = stations.static %>%
   dplyr::select(c(sid, altitude, elevation, slope, aspect, Agricultural_areas, Artificials_surfaces, Forest, Herbaceous_vegetation))
