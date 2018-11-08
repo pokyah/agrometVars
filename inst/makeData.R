@@ -360,9 +360,6 @@ stations.ext  = select(stations.ext, -one_of(excluded_vars))
 stations.static = stations.ext
 stations.sf = stations.static %>%
   dplyr::select(c(sid, poste))
-# adding the px of closest point of grid to  each stations of stations.sf
-
-
 # creating the stations static dataset
 st_geometry(stations.static) = NULL
 stations.static = stations.static %>%
@@ -389,6 +386,18 @@ devtools::use_data(stations.dyn, overwrite = TRUE)
 grid.dyn = inca.hourly.1month
 colnames(grid.dyn) = c("px", "tsa_hp1", "mtime")
 devtools::use_data(grid.dyn, overwrite = TRUE)
+
+# adding the px of closest point of grid to each stations of stations.sf
+closest_px <- list()
+for(st in seq_len(nrow(stations.sf))){
+  closest_px[[st]] <- grid.sf[which.min(
+    st_distance(grid.sf, stations.sf[st,])),]
+}
+closest_px = do.call(rbind.data.frame, closest_px)
+stations.sf = stations.sf %>%
+  dplyr::bind_cols(data.frame(closest_px$px)) %>%
+  dplyr::rename(px = closest_px.px )
+devtools::use_data(stations.sf, overwrite = TRUE)
 
 #+ ---------------------------------
 #' ## Terms of service
