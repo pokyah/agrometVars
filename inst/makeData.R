@@ -29,8 +29,8 @@ devtools::use_data(customGrid, overwrite = TRUE)
 # loading INCA (RMI) grid for whole BE
 load("./inst/extdata/INCA_BE_DAY/INCA_TT_2013.Rdata")
 incaGrid = sf::st_transform(sf::st_as_sf(inca), crs = 4326)
-# limit it to Wallonia and not full extent
-incaGrid = sf::st_transform(sf::st_intersection(sf::st_transform(incaGrid, 3812), sf::st_transform(wallonia, 3812)), 4326)
+# limit it to Wallonia + 5km buffer and not full extent
+incaGrid = sf::st_transform(sf::st_intersection(sf::st_transform(incaGrid, 3812), sf::st_buffer(st_transform(wallonia, 3812), 5000)), 4326)
 incaGrid = incaGrid[c("px", "latitude", "longitude")]
 devtools::use_data(incaGrid, overwrite = TRUE)
 
@@ -95,9 +95,21 @@ records.hourly.1month = records.data %>%
 # downloading the raster tile data using elevatr
 # for resolution corresponding to z parameter check elevatr doc https://cran.r-project.org/web/packages/elevatr/vignettes/introduction_to_elevatr.html#get_raster_elevation_data
 # 9 is around 200 m resolution at 45° lat
-DEM = elevatr::get_elev_raster(as(wallonia, "Spatial"), z = 9, src = "aws")
-# cliping to Wallonia
-DEM = raster::mask(DEM, as(wallonia, "Spatial"))
+DEM = elevatr::get_elev_raster(
+  as(
+    sf::st_transform(
+      sf::st_buffer(sf::st_transform(wallonia, 3812), 5000),
+      4326),
+      "Spatial"),
+  z = 9,
+  src = "aws")
+# cliping to Wallonia + 5km buffer
+DEM = raster::mask(DEM,
+  as(
+    sf::st_transform(
+      sf::st_buffer(sf::st_transform(wallonia, 3812), 5000),
+      4326),
+    "Spatial"))
 elevation = DEM
 # computing slope and aspect
 slope = raster::terrain(DEM, "slope")
@@ -116,8 +128,8 @@ devtools::use_data(slope, overwrite = TRUE)
 corine <- sf::st_read("./inst/extdata/CLC/CLC12_BE.shp")
 # project to 4326
 corine = sf::st_transform(corine, 4326)
-# crop to Wallonia
-corine = sf::st_intersection(sf::st_transform(corine, 3812), sf::st_transform(wallonia, 3812))
+# crop to Wallonia + 5 km buffer
+corine = sf::st_intersection(sf::st_transform(corine, 3812), sf::st_buffer(sf::st_transform(wallonia, 3812), 5000))
 # Download legend for CLC
 download.file("http://www.eea.europa.eu/data-and-maps/data/corine-land-cover-2006-raster-1/corine-land-cover-classes-and/clc_legend.csv/at_download/file",
   destfile = "./inst/extdata/CLC/clc_legend.csv")
